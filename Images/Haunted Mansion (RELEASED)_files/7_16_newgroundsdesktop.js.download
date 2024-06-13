@@ -1,0 +1,498 @@
+(function(zonevars) {
+	var zonemasters = zonevars.zonemasters;
+	var top_loc="",top_href="",top_hash="";
+	function getQueryHash() {
+		top_hash = (top_hash=top_href.match(/[\?\&]cpmstarhash=([^\&]*)/))==null?"":"#"+top_hash[1];		
+	}
+	try { top_loc=window.top.location; top_href=top_loc.href; top_hash=top_loc.hash; } catch(err) {
+		top_href = window.document.referrer;
+		getQueryHash();
+	}
+	if(!top_hash) getQueryHash();
+
+    var x=(10+((x*7)%26)).toString(36)+(x=window.location.href.split('').reduce(function(a,b){return(a<<5)-a+b.charCodeAt(0)>>>1},0));
+	var y=window.location.href.split('').reduce(function(a,b){return(a<<5)-a+b.charCodeAt(0)>>>1},0);y=(10+((y*7)%26)).toString(36)+y.toString(36);
+	var z=window.location.href.split('').reduce(function(a,b){return(a<<5)-a+b.charCodeAt(0)>>>0},0);z=(10+((z*7)%26)).toString(36)+z.toString(36);
+	var q=window.location.href.split('#')[0].split('').reduce(function(a,b){return(a<<5)-a+b.charCodeAt(0)>>>1},0);q=(10+((q*7)%26)).toString(36)+q.toString(36);
+	var cpmstarx="cpmstarx";
+	if(window[x]) window[y] = window[x];
+	if(window[y]) window[z] = window[y];
+	if(window[z]) window[q] = window[z];
+	if(window[q]) window[cpmstarx] = window[q];
+    
+    var dev = top_hash == "#cpmstarDev";
+	var staging = (top_hash == "#cpmstarStaging" || top_hash == "#urlzing");
+	if(typeof window[cpmstarx]!=="object") window[x] = window[y] = window[z] = window[q] = window[cpmstarx] = {};
+	
+	if(typeof(window[cpmstarx].zonevars)==="object") return;
+	window[cpmstarx].zonevars = zonevars;
+
+	var ver = "1186";
+	window[cpmstarx].zonevars.ver = ver;
+
+
+	if(top_hash == "#urlzing") {
+		var qs = new URLSearchParams(window.location.search);
+		if(qs.has('cpmstarDev')) {
+			dev = true;
+		}
+	}
+
+	for(var i=0; i<zonemasters.length; i++) { //Insert all the zonemasters
+		var zonemasterobj = (typeof zonemasters[i]==="string")?{path:'/cached/zonemasters/'+zonemasters[i]}:zonemasters[i];
+
+		var s = document.createElement('script'); 
+		s.type = 'text/javascript'; 
+		s.async = true;
+		
+		var proto = (window.location.protocol == "http:")?"http:":"https:";
+		if(zonemasterobj.host == null) {            
+			if(dev) zonemasterobj.host = "dev.server.cpmstar.com";
+			else if(staging) zonemasterobj.host = "staging.server.cpmstar.com";
+			else if(proto == "https:") zonemasterobj.host = "ssl.cdne.cpmstar.com";
+			else zonemasterobj.host = "cdn.cpmstar.com";
+		}else{
+			if(staging) {
+				if(zonevars.jbcheck) zonevars.jbcheck.host = "staging.urlzing.com";				
+				zonemasterobj.host = "staging.urlzing.com"; 				
+			}
+		}
+		
+		s.src = proto + "//" + zonemasterobj.host + zonemasterobj.path + "?ver="+ver;
+		var s2=document.getElementsByTagName('script')[0];
+		s2.parentNode.insertBefore(s, s2);
+	}
+})(
+{
+  "zonemasters": [
+    "mobilemodules.js"
+  ],
+  "requests": {
+    "hb": {
+      "kind": "hb",
+      "pbjsfile": "starprebid.js",
+      "PREBID_TIMEOUT": 850,
+      "adUnits": [
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  728,
+                  90
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 53,
+            "width": 728,
+            "height": 90
+          },
+          "code": "/Newgrounds/$53"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  120,
+                  600
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 54,
+            "width": 120,
+            "height": 600
+          },
+          "code": "/Newgrounds/$54"
+        },
+        {
+          "bids": [
+            {
+              "bidder": "sharethrough",
+              "params": {
+                "pkey": "on7V7w4KcitsB5XWV13GdnbU"
+              },
+              "campaignid": "460199",
+              "campaignids": {
+                "300x250": 460199
+              }
+            }
+          ],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  300,
+                  250
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 55,
+            "width": 300,
+            "height": 250
+          },
+          "code": "/Newgrounds/$55"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  728,
+                  90
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 630,
+            "width": 728,
+            "height": 90
+          },
+          "code": "/Newgrounds/$630"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  728,
+                  90
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 9713,
+            "width": 728,
+            "height": 90
+          },
+          "code": "/Newgrounds/$9713"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  728,
+                  90
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 10728,
+            "width": 728,
+            "height": 90
+          },
+          "code": "/Newgrounds/$10728"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  300,
+                  250
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 11260,
+            "width": 300,
+            "height": 250
+          },
+          "code": "/Newgrounds/$11260"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  728,
+                  90
+                ],
+                [
+                  800,
+                  100
+                ],
+                [
+                  970,
+                  90
+                ],
+                [
+                  320,
+                  50
+                ],
+                [
+                  300,
+                  50
+                ],
+                [
+                  216,
+                  36
+                ],
+                [
+                  728,
+                  250
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "poolid": 79437
+          },
+          "code": "/Newgrounds/$79437"
+        },
+        {
+          "bids": [],
+          "mediaTypes": {
+            "banner": {
+              "sizes": [
+                [
+                  1,
+                  1
+                ]
+              ]
+            }
+          },
+          "fallback": {
+            "kind": "json",
+            "json": "1",
+            "poolid": 84482
+          },
+          "code": "/Newgrounds/$84482"
+        }
+      ],
+      "publisherid": 16,
+      "bidderDiscreps": {}
+    },
+    "banner728x90": {
+      "kind": "banner",
+      "poolid": 10728
+    },
+    "banner120x600": {
+      "kind": "banner",
+      "poolid": 54
+    },
+    "banner300x250": {
+      "kind": "banner",
+      "poolid": 11260
+    },
+    "anchor": null
+  },
+  "modules": [
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 53"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$53"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 90
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$53"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 54"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$54"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 600
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$54"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 55"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$55"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 250
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$55"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 630"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$630"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 90
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$630"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 9713"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$9713"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 90
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$9713"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 10728"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$10728"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 90
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$10728"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 11260"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$11260"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 250
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$11260"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 79437"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$79437"
+        },
+        "wait": true
+      },
+      "options": {
+        "maxHeight": 250
+      },
+      "request": "",
+      "adUnitPath": "/Newgrounds/$79437"
+    },
+    {
+      "kind": "banner",
+      "info": {
+        "name": "POOL 84482"
+      },
+      "conditions": {
+        "target": {
+          "kind": "replace",
+          "find": "$84482"
+        }
+      },
+      "options": {
+        "maxHeight": 1080
+      },
+      "request": "hb",
+      "adUnitPath": "/Newgrounds/$84482"
+    }
+  ],
+  "conditions": {
+    "test": "(typeof($ng_adcode_suitability) == 'undefined' || ($ng_adcode_suitability != 'A' && $ng_adcode_suitability != 'M' ))"
+  },
+  "info": {
+    "id": 7,
+    "tags": [],
+    "zonepools": {
+      "53": {
+        "module": "POOL 53"
+      },
+      "54": {
+        "module": "POOL 54"
+      },
+      "55": {
+        "module": "POOL 55"
+      },
+      "630": {
+        "module": "POOL 630"
+      },
+      "9713": {
+        "module": "POOL 9713"
+      },
+      "10728": {
+        "module": "POOL 10728"
+      },
+      "11260": {
+        "module": "POOL 11260"
+      },
+      "79437": {
+        "module": "POOL 79437"
+      },
+      "84482": {
+        "module": "POOL 84482"
+      }
+    }
+  }
+}
+);

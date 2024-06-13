@@ -1,0 +1,226 @@
+var NgFavorites;
+
+NgFavorites = (function($) {
+	var in_progress = false, current_element = null;
+
+	var userkeys = {};
+	var watched_elements = {};
+
+	/*
+	 * Set these back to their inactive states.
+	 */
+	var resetDefaults = function() {
+		in_progress = false;
+		current_element = null;
+	};
+
+	/*
+	 * Response will either be a string, in which case it's
+	 * a replacement for what we've just clicked. If it's a form, replace
+	 * the entire thing, otherwise it's an <a> tag and its parent div
+	 * gets replaced.
+	 *
+	 * If the response is an object, then we'll probably have a url we
+	 * can redirect to and an optional success message to alert in
+	 * response.url and response.success respectively.
+	 */
+	var handleResponse = function(response) {
+		if (response) {
+			if ($.isString(response)) {
+				if (current_element.is('a')) {
+					current_element.parent('div').replaceWith($(response));
+				} else {
+					current_element.replaceWith($(response));
+				}
+			} else if (response.url) {
+				// we may have left them a message telling them
+				// what they've just done
+				if (response.success) {
+					alert(response.success);
+				}
+
+				// get out of here early
+				window.location.href = response.url;
+			}
+		}
+
+	};
+
+	/*
+	 * After the favorite has been added, do this.
+	 */
+	var afterWards = function(response) {
+
+		if (null !== current_element) {
+			var current_id = current_element.attr('id');
+
+			// incrementCount comes only after we've dealt with the response
+			handleResponse(response);
+
+			// increment the fan count by 1
+			incrementCount(current_id);
+		}
+
+
+		resetDefaults();
+
+		rebindElementsToWatch();
+	};
+
+	/*
+	 * If the dom has changed, then the listeners may have become
+	 * unattached. Loop through each one and set them up again.
+	 */
+	var rebindElementsToWatch = function() {
+		var el;
+
+		for (var n in watched_elements) {
+			el = watched_elements[n];
+
+			if (el.exists()) {
+				listenTo(el);
+			}
+		}
+	};
+
+	/*
+	 * +1 to the total number of something. User's fans, for example.
+	 * may want to come back to this, to replace high figures
+	 * with approximates (e.g. 15K vs 15,000)
+	 */
+	var incrementCount = function(id) {
+		var count_element = $('#count_' + id);
+
+		if (count_element.exists()) {
+			// this stuff is currently in a span
+			if (count_element.children().size()) {
+				count_element = count_element.children(count_element.children().size() - 1);
+			}
+
+			count_element.html(FormatNumber(parseInt(count_element.html().replace(/[^0-9]+/g, ''), 10) + 1) + ' Fans');
+		}
+	};
+
+	/*
+	 * Method for listening to forms
+	 */
+	var submitForm = function(e) {
+		e.stopImmediatePropagation();
+
+		if (in_progress) {
+			alert('Sorry, another form is currently being saved.');
+			return false;
+		}
+
+		current_element = $(e.target);
+		in_progress = true;
+
+		current_element.ajaxSubmit(afterWards, { error: resetDefaults });
+
+		return false;
+	};
+
+	/*
+	 * method for listening to <a> tags
+	 */
+	var listenToA = function(element) {
+		if (in_progress) {
+			alert('Sorry, another operation is pending.');
+			return false;
+		}
+
+		var userkey = getUserKeyFromPool(element);
+		//current_element = element;
+
+		var that = element;
+
+		element.off('click').ajaxifyLink({
+			onclick: function() {
+				current_element = that;
+			},
+
+			success_func: afterWards,
+			error: resetDefaults,
+			data: {
+				userkey: userkey
+			}
+		});
+	};
+
+	/*
+	 * Fetch back the jquery object for the html element that has been
+	 * clicked or pressed from either an id string, or an object
+	 */
+	var getElementFromIdOrObject = function(id_or_object) {
+		var element;
+
+		if ($.isString(id_or_object)) {
+			if (id_or_object.indexOf('#') !== 0) {
+				id_or_object = '#' + id_or_object;
+			}
+
+			element = $(id_or_object);
+		} else if (typeof id_or_object === typeof $(id_or_object)) { //(id_or_object.is('form')) {
+			element = id_or_object;
+		} else {
+			throw "Don't know how to add this.";
+		}
+
+		return element;
+	};
+
+	/*
+	 * Pull out a specific user key based on the element's id from the
+	 * pool
+	 */
+	var getUserKeyFromPool = function(element) {
+		var id = element.attr('id');
+
+		return typeof userkeys[id] !== typeof undefined ? userkeys[id] : null
+	};
+
+	/*
+	 * This determines what handler to pass off to, based on whether or
+	 * not the element is a form or an <a> link
+	 */
+	var listenTo = function(element) {
+		if (element.is('form')) {
+			element.on('submit', submitForm);
+		} else if (element.is('a')) {
+			listenToA(element);
+		} else {
+			throw "don't know how to handle " + (typeof element);
+		}
+	};
+
+	/*
+	 * Attach a listener to the element we're going to follow. Can
+	 * be a form or link. If it's a link, no userkey is necessary if
+	 * the userkey is defined in the page via PHP.set('uek'), which is
+	 * currently in the global layout.
+	 */
+	var registerListener = function(id_or_object, userkey) {
+		var element = getElementFromIdOrObject(id_or_object);
+
+		if (typeof userkey === 'string') {
+			userkeys[element.attr('id')] = userkey;
+		}
+
+		listenTo(element);
+
+		watched_elements[element.attr('id')] = element;
+	};
+
+	/*
+	 * Singleton method of providing listeners.
+	 */
+	return {
+		addListener: function(id_or_object, userkey) {
+			registerListener(id_or_object, userkey);
+
+			return NgFavorites;
+		}
+	}
+
+})(jQuery);
+

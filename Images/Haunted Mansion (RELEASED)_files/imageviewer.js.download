@@ -1,0 +1,822 @@
+var ngImageViewer = function(config) {
+
+	if (typeof(jQuery) === 'undefined') {
+		throw("ngImageViewer requires jQuery!");
+		return;
+	}
+
+	if (typeof(Hammer) === 'undefined') {
+		throw("ngImageViewer requires Hammer.js!");
+		return;
+	}
+
+	var $ = jQuery;
+
+	var rendering_options = [
+		{label: "Smooth", css: ""},
+		{label: "Pixelated", css: "pixelated"},
+	];
+
+	var rendering = "";
+	var pixel_snapping = false;
+	var max_scale = 1;
+	var min_scale = 1;
+	var scale = 1;
+	var frameWidth = 640;
+	var frameHeight = 640;
+	var velocity = {x:0,y:0};
+	var panspeed = {x:0,y:0};
+	var pan_thrust = 0.5;
+	var max_panspeed = 40; // for keyboard panning
+	var min_panspeed = -(max_panspeed);
+	var anchor = {x:0,y:0};
+	var imgPos = {x:0,y:0};
+	var scrollSteps = 2000;
+	var scalestep = 1/0.005;
+
+	var scale_factor = 0.005;
+
+	var imgWidth, imgHeight, currentWidth, currentHeight;
+	var template = `
+		<div class="ngImageViewer">
+			<div data-elem="touchArea">
+				<img data-elem="image" draggable="false"/>
+			</div>
+			<div class="ui" data-elem="ui">
+				<div>
+					<button class="ui-zoom" data-elem="zoom-out"><span><i class="fa fa-search-minus"></i></span></button>
+				</div>
+				<div>
+					<button class="ui-zoom" data-elem="zoom-in"><span><i class="fa fa-search-plus"></i></span></button>
+				</div>
+				<div>
+					<button class="ui-zoom" data-elem="zoom-100"><span><i class="fa fa-expand"></i></span></button>
+				</div>
+				<div>
+					<button class="ui-zoom" data-elem="zoom-fill"><span><i class="fa fa-compress"></i></span></button>
+				</div>
+				<div class="fill"></div>
+				<div>
+					<button class="ui-close" data-elem="close"><span>X</span></button>
+				</div>
+			</div>
+			<div class="spinner" data-elem="spinner">
+				<div><em class="fa fa-spin fa-spinner"></em></div>
+			</div>
+		</div>
+	`;
+
+	var image = null;
+	var pinch_zoom;
+
+	var $view, $img, $ui, $touchArea, $spinner;
+	var ui_timeout;
+	var mouse_is_down = false;
+	var mouse_just_released = false;
+	var can_pan = true;
+	var mousePos = {x:0,y:0};
+	var pointerId = null;
+	var requestFrames = false;
+	var pixelZooms = [];
+	
+	let _this = this;
+
+	function init() 
+	{
+		if (typeof(config) === 'object') {
+			if (typeof(config.rendering) === 'string') {
+				this.setRendering(config.rendering);
+			}
+
+			if (typeof(config.max_scale) !== 'undefined') {
+				this.setMaxScale(config.max_scale);
+			}
+		}
+	};
+
+	this.setRendering = function(_rendering)
+	{
+		rendering_options.forEach(option => {
+			if (_rendering === option.css) rendering = option.css;
+		});
+		return this;
+	};
+
+	this.setMaxScale = function(max)
+	{
+		max = parseFloat(max);
+		if (!isNaN(max) && max > 0) max_scale = max;
+		return this;
+	};
+
+	this.setTemplate = function(html)
+	{
+		template = html;
+	};
+
+	this.setImage = function(src)
+	{
+		$ui.hide();
+		
+		if (!$img || !$img.length) return;
+
+		let img = $img[0];
+		$img.css('visibility','hidden');
+		function showMe() {
+			_this.resetImage();
+			if ($spinner) $spinner.hide();
+			$img.css('visibility','');
+			$ui.show();
+		}
+		img.onload = showMe;
+		img.src = src;
+
+	}
+
+	this.open = function(image) 
+	{
+		$view = $(template);
+
+		$view.css('opacity',0).css('transition','opacity 0.5s');
+		setTimeout(()=>{
+			$view.css('opacity','100%');
+		},10);
+
+		$img = $('img[data-elem="image"]', $view);
+		$ui = $('[data-elem="ui"]', $view);
+		$spinner = $('[data-elem="spinner"]', $view);
+
+		$close_btn = $('[data-elem="close"]',$ui);
+		$zoom_in_btn = $('[data-elem="zoom-in"]',$ui);
+		$zoom_100_btn = $('[data-elem="zoom-100"]',$ui);
+		$zoom_fill_btn = $('[data-elem="zoom-fill"]',$ui);
+		$zoom_out_btn = $('[data-elem="zoom-out"]',$ui);
+
+		showUI();
+		$('body').append($view);
+
+		$touchArea = $('[data-elem="touchArea"]');
+
+		$touchArea.on('mousewheel DOMMouseScroll', function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			onWheel(e.originalEvent);
+		});
+
+		var hmr = new Hammer($touchArea[0]);
+		hmr.get('pan').set({ direction: Hammer.DIRECTION_ALL });
+		var pinch = new Hammer.Pinch();
+		hmr.add(pinch);
+
+		hmr.on("panstart", function(ev) {
+			if (can_pan && pointerId === null) {
+				let e = ev.changedPointers[0];
+				pointerId = e.pointerId;
+				$img.css('transition','');
+				mousePos = {
+					x:e.pageX,
+					y:e.pageY
+				};
+			}
+		});
+
+		hmr.on("panend", function(ev) {
+			
+			if (pointerId === null) return;
+
+			let found = false;
+			for(let i=0; i<ev.changedPointers.length; i++) {
+				if (ev.changedPointers[i].pointerId === pointerId) found = true;
+			}
+			if (!found) return;
+
+			pointerId = null;
+		});
+
+		hmr.on("pan", function(ev) {
+			if (can_pan) {
+				let e = null;
+				for(let i=0; i<ev.changedPointers.length; i++) {
+					if (ev.changedPointers[i].pointerId === pointerId) {
+						e = ev.changedPointers[i];
+						break;
+					}
+				}
+				if (!e) return;
+
+		    	panImage(e.pageX-mousePos.x, e.pageY-mousePos.y);
+				mousePos = {
+					x:e.pageX,
+					y:e.pageY
+				};
+			}
+		});
+
+		hmr.on("pinch", function(ev) {
+			can_pan = false;
+		    updateScale(null, pinch_zoom * ev.scale);
+		});
+
+		hmr.on("pinchstart", function(ev) {
+			$img.css('transition','');
+		    pinch_zoom = scale;
+		    anchor = ev.center;
+		});
+
+		hmr.on("pinchend", function(ev) {
+		    setTimeout(function() {
+		    	can_pan = true;
+		    },1);
+		});
+
+		let _last = (new Date()).getTime();
+
+		hmr.on("tap", function(ev) {
+
+			let _now = (new Date()).getTime();
+			let diff = _now - _last;
+			if (diff < 330) {
+				_last = 0;
+				anchor = ev.center;
+				toggleZoom();
+				ev.srcEvent.preventDefault();
+				ev.srcEvent.stopPropagation();
+				return;
+			} else {
+				_last = _now;
+			}
+			
+			if (ev.center.x < imgPos.x || ev.center.x > imgPos.x + currentWidth || ev.center.y < imgPos.y || ev.center.y > imgPos.y + currentHeight) {
+				_this.close();
+			}
+
+		    if (ev.pointerType === 'touch') {
+		    	mouse_just_released = true;
+		    	showUI(true);
+
+		    	setTimeout(function() {
+		    		mouse_just_released = false;
+		    	}, 250);
+		    }
+		});
+
+		$zoom_in_btn.click(function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			anchor = {
+				x: (frameWidth/2),
+				y: (frameHeight/2)
+			};
+			$img.css('transition', imgWidth <= 6000 && imgHeight <= 6000 ? 'transform 0.4s':'');
+
+			if (rendering === 'pixelated') {
+				let newscale = pixelZooms[0];
+				pixelZooms.forEach(z => {
+					if (z > scale && z < newscale) {
+						newscale = z;
+					}
+				});
+				updateScale(null, newscale);
+			} else {
+				updateScale(0.1);
+			}
+		});
+
+		$zoom_out_btn.click(function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			anchor = {
+				x: (frameWidth/2),
+				y: (frameHeight/2)
+			};
+			$img.css('transition', imgWidth <= 6000 && imgHeight <= 6000 ? 'transform 0.4s':'');
+			if (rendering === 'pixelated') {
+				let newscale = pixelZooms[pixelZooms.length-1];
+				pixelZooms.forEach(z => {
+					if (z < scale && z > newscale) {
+						newscale = z;
+					}
+				});
+				updateScale(null, newscale);
+			} else {
+				updateScale(-0.1);
+			}
+		});
+
+		$zoom_100_btn.click(function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			anchor = {
+				x: (frameWidth/2),
+				y: (frameHeight/2)
+			};
+			zoom100();
+		});
+
+		$zoom_fill_btn.click(function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			anchor = {
+				x: (frameWidth/2),
+				y: (frameHeight/2)
+			};
+			zoomFill();
+		});
+
+		$close_btn.click(function(e) {
+			e.preventDefault();
+			e.stopPropagation();
+			_this.close();
+		});
+
+		window.addEventListener('mousemove', onMouseMove);
+		window.addEventListener('mouseup', onMouseUp);
+		window.addEventListener('mousedown', onMouseDown);
+		window.addEventListener('wheel', onWheel);
+		window.addEventListener('resize', onResize);
+		window.addEventListener('keydown', onKeyDown);
+		window.addEventListener('keyup', onKeyUp);
+		
+		requestFrames = true;
+		window.requestAnimationFrame(onAnimationFrame);
+		this.setImage(image);
+	}
+
+	this.close = function() 
+	{
+		$ui.remove();
+		$img = null;
+		$ui = null;
+		$touchArea = null;
+
+		window.removeEventListener('mousemove', onMouseMove);
+		window.removeEventListener('mouseup', onMouseUp);
+		window.removeEventListener('mousedown', onMouseDown);
+		window.removeEventListener('wheel', onWheel);
+		window.removeEventListener('resize', onResize);
+		window.removeEventListener('keydown', onKeyDown);
+		window.removeEventListener('keyup', onKeyUp);
+		requestFrames = false;
+		
+		$view.css('opacity',0);
+		setTimeout(()=>{
+			$view.remove();
+			$view = null;
+		},501);
+	}
+
+	this.resetImage = function(usescale, reframe)
+	{
+		let oldframe = reframe === true ? [frameWidth,frameHeight] : null;
+
+		resetFrame();
+		
+		$img.css('transition','').css('image-rendering',rendering);
+
+		imgWidth = $img[0].naturalWidth;
+		imgHeight = $img[0].naturalHeight;
+		maxWidth = imgWidth * max_scale;
+		maxHeight = imgHeight * max_scale;
+		scale = 1;
+
+		let zooms = max_scale;
+		while (zooms > 0) {
+			pixelZooms.push(zooms);
+			zooms--;
+		}
+
+		if (imgWidth > frameWidth || imgHeight > frameHeight) {
+
+			if(rendering === 'pixelated') {
+				let fitWidth = imgWidth;
+				let fitHeight = imgHeight;
+				while (fitWidth > frameWidth || fitHeight > frameHeight) {
+					scale *= 0.5;
+					fitWidth *= 0.5;
+					fitHeight *= 0.5;
+					pixelZooms.push(scale);
+				}
+			} else {
+				let hscale = frameWidth/imgWidth;
+				let vscale = frameHeight/imgHeight;
+				scale = hscale < vscale ? hscale : vscale;
+				scale = Math.floor(scale / scale_factor) * scale_factor;
+			}
+		}
+
+		min_scale = scale;
+
+		if (usescale) {
+			scale = usescale;
+			if (scale > max_scale) scale = max_scale;
+			else if (scale < min_scale) scale = min_scale;
+		}
+
+		if (min_scale === max_scale) {
+			$zoom_in_btn.remove();
+			$zoom_100_btn.remove();
+			$zoom_fill_btn.remove();
+			$zoom_out_btn.remove();
+		}
+		if (max_scale > 1 && min_scale === 1) {
+			$zoom_100_btn.remove();
+		}
+
+		anchor = {
+			x: (frameWidth/2),
+			y: (frameHeight/2)
+		};
+
+		updateScale(0,null,oldframe);
+
+		let range = imgWidth - currentWidth;
+		let minrange = 1000 * max_scale;
+		if (range < minrange) range = minrange;
+
+		scrollSteps = Math.ceil(range * 5)/5;
+	}
+
+	function zoom100()
+	{
+		$img.css('transition', imgWidth <= 6000 && imgHeight <= 6000 ? 'transform 0.4s':'');
+		updateScale(null, 1);
+	}
+
+	function zoomFill()
+	{
+		$img.css('transition', imgWidth <= 6000 && imgHeight <= 6000 ? 'transform 0.4s':'');
+		updateScale(null, min_scale);
+	}
+
+	function zoomMax()
+	{
+		$img.css('transition', imgWidth <= 6000 && imgHeight <= 6000 ? 'transform 0.4s':'');
+		updateScale(null, max_scale);
+	}
+
+	function toggleZoom()
+	{
+		if (scale === 1 && max_scale > 1) zoomMax();
+		else if (scale >= 1) zoomFill();
+		else zoom100();
+	}
+
+	function panImage(x,y)
+	{
+		if (x || y) {
+			velocity = {x:x, y:y};
+		}
+		let max_x = imgPos.x > 0 ? imgPos.x : 0;
+		let min_x = frameWidth - currentWidth;
+
+		let max_y = imgPos.y > 0 ? imgPos.y : 0;
+		let min_y = frameHeight - currentHeight;
+
+		if (currentWidth < frameWidth) {
+			max_x = min_x = Math.round(min_x/2);
+			if (imgPos.x < min_x) min_x = imgPos.x;
+			if (imgPos.x > max_x) max_x = imgPos.x;
+		}
+
+		if (currentHeight < frameHeight) {
+			max_y = min_y = Math.round(min_y/2);
+			if (imgPos.y < min_y) min_y = imgPos.y;
+			if (imgPos.y > max_y) max_y = imgPos.y;
+		}
+
+		if (imgPos.x < min_x) min_x = imgPos.x;
+		if (imgPos.y < min_y) min_y = imgPos.y;
+
+		if (x) imgPos.x += x;
+		if (y) imgPos.y += y;
+
+		if (imgPos.x > max_x) imgPos.x = max_x;
+		else if (imgPos.x < min_x) imgPos.x = min_x;
+
+		if (imgPos.y > max_y) imgPos.y = max_y;
+		else if (imgPos.y < min_y) imgPos.y = min_y;
+
+		updateTransform();
+	}
+
+	function updateScale(change, setactual, oldframe)
+	{
+
+		let _focus;
+		if (oldframe) {
+			_focus = {
+				x: ((oldframe[0]/2) - imgPos.x)/currentWidth,
+				y: ((oldframe[1]/2) - imgPos.y)/currentHeight
+			};
+		}
+
+		let newscale = scale;
+
+		if (setactual) {
+			newscale = setactual;
+		} else {
+			if (change) {
+				let mod = change > 0 ? 1:-1;
+				change = (Math.ceil(Math.abs(change) * scalestep)/scalestep) * mod;
+			}
+			newscale = Math.round((scale + change)*1000)/1000;
+		}
+
+		if (newscale > max_scale) newscale = max_scale;
+		else if (newscale < min_scale) newscale = min_scale;
+		
+		let oldscale = scale;
+
+		scale = newscale;
+
+		if (anchor.x < imgPos.x) anchor.x = imgPos.x;
+		else if (anchor.x > imgPos.x + currentWidth) anchor.x = imgPos.x + currentWidth;
+
+		if (anchor.y < imgPos.y) anchor.y = imgPos.y;
+		else if (anchor.y > imgPos.y + currentHeight) anchor.y = imgPos.y + currentHeight;
+
+		let offset = {
+			x: ((anchor.x - imgPos.x)/oldscale)*newscale,
+			y: ((anchor.y - imgPos.y)/oldscale)*newscale
+		};
+
+		currentWidth = (imgWidth * scale);
+		currentHeight = (imgHeight * scale);
+
+		var margin;
+
+		if (oldframe) {
+			anchor = {
+				x: Math.round(frameWidth/2),
+				y: Math.round(frameHeight/2)
+			};
+
+			imgPos.x = Math.round(anchor.x - (_focus.x * currentWidth));
+			imgPos.y = Math.round(anchor.y - (_focus.y * currentHeight));
+
+			if (currentWidth <= frameWidth) {
+				imgPos.x = Math.round((frameWidth - currentWidth)/2);
+			} else if (imgPos.x > 0) {
+				imgPos.x = 0;
+			} else if (imgPos.x < frameWidth - currentWidth) {
+				imgPos.x = frameWidth - currentWidth;
+			}
+
+			if (currentHeight <= frameHeight) {
+				imgPos.y = Math.round((frameHeight - currentHeight)/2);
+			} else if (imgPos.y > 0) {
+				imgPos.y = 0;
+			} else if (imgPos.y < frameHeight - currentHeight) {
+				imgPos.y = frameHeight - currentHeight;
+			}
+
+			updateTransform();
+		} else {
+
+			if (currentWidth <= frameWidth && currentHeight <= frameHeight) {
+				imgPos.x = ((frameWidth - currentWidth)/2);
+				imgPos.y = ((frameHeight - currentHeight)/2);
+			} else {
+				imgPos.x = (anchor.x - offset.x);
+				imgPos.y = (anchor.y - offset.y);
+			}
+
+			updateTransform();
+
+			panImage(0,0);
+		}
+	}
+
+	function updateTransform()
+	{
+		let xform = "translate("+imgPos.x+"px,"+imgPos.y+"px) scale("+scale+")";
+		$img.css('transform',xform);
+	}
+
+	function resetFrame()
+	{
+		frameWidth = Math.floor($view.width());
+		frameHeight = Math.floor($view.height());
+	}
+
+	function hideUI()
+	{
+		if (ui_timeout) clearTimeout(ui_timeout);
+		if (!$ui) return;
+		$ui.css('opacity','0%');
+	}
+
+	function showUI(from_touch)
+	{
+		if (!$ui) return;
+		$ui.css('opacity','100%');
+		if (ui_timeout) clearTimeout(ui_timeout);
+		let time = from_touch === true ? 5000 : 2000;
+		if ($('button:hover',$ui).length === 0) ui_timeout = setTimeout(hideUI, time);
+	}
+
+	function onMouseMove(e)
+	{
+		if (!mouse_is_down && !mouse_just_released) {
+			showUI();
+		}
+	}
+
+	function onMouseUp(e)
+	{
+		mouse_is_down = false;
+	}
+
+	function onMouseDown(e)
+	{
+		mouse_is_down = true;
+	}
+
+	var keys = {
+		esc: 27,
+		shift: 16,
+		ctrl: 17,
+		plusX: 187,
+		minusX: 189,
+		plus: 107,
+		minus: 109,
+		up: 38,
+		down: 40,
+		left: 37,
+		right: 39,
+		space: 32
+	}
+
+	var keymap = {};
+	var keyState = {};
+	for(var i in keys) {
+		keymap[keys[i]] = i;
+		keyState[i] = {start:0,down:0};
+	};
+
+	function handleKeyDown(key)
+	{
+		if (keyState[key].down) return;
+
+		keyState[key].start = (new Date()).getTime();
+		keyState[key].down = 1;
+
+		// handle keys that don't have CTRL'd versions
+		if (!keyState['ctrl'].down) {
+			switch(key) {
+
+				case 'left':
+					panspeed.x = pan_thrust;
+					return;
+
+				case 'right':
+					panspeed.x = -(pan_thrust);
+					return;
+
+				case 'up':
+					panspeed.y = pan_thrust;
+					return;
+
+				case 'down':
+					panspeed.y = -(pan_thrust);
+					return;
+			}
+		}
+	}
+
+	function handleKeyUp(key)
+	{
+		let passed = (new Date()).getTime() - keyState[key].start;
+		if (passed < 200) handleKeyPressed(key);
+
+		keyState[key].start = 0;
+		keyState[key].down = 0;
+
+		switch (key) {
+			case 'left':
+			case 'right':
+				panspeed.x = 0;
+				return;
+			case 'up':
+			case 'down':
+				panspeed.y = 0;
+				return;
+		}
+	}
+
+	function handleKeyPressed(key)
+	{
+		switch (key) {
+			case 'esc':
+				_this.close();
+				return;
+			case 'up':
+				if (!keyState['ctrl'].down) return;
+			case 'plus':
+			case 'plusX':
+				$zoom_in_btn.click();
+				return;
+			case 'down':
+				if (!keyState['ctrl'].down) return;
+			case 'minus':
+			case 'minusX':
+				$zoom_out_btn.click();
+				return;
+			case 'space':
+				anchor = {
+					x: (frameWidth/2),
+					y: (frameHeight/2)
+				};
+				toggleZoom();
+				return;
+		}
+	}
+
+	function onKeyDown(e) {
+		if (typeof(keymap[e.keyCode]) === 'undefined') return;
+		e.preventDefault();
+		e.stopPropagation();
+		handleKeyDown(keymap[e.keyCode]);
+	}
+
+	function onKeyUp(e) {
+		if (typeof(keymap[e.keyCode]) === 'undefined') return;
+		e.preventDefault();
+		e.stopPropagation();
+		handleKeyUp(keymap[e.keyCode]);
+	}
+
+	function onWheel(e)
+	{
+		e.preventDefault();
+		e.stopPropagation();
+
+		if (!e.deltaY) return;
+		let _scale =  -(e.deltaY / scrollSteps);
+
+		anchor = {
+			x: e.pageX,
+			y: e.pageY
+		};
+
+		$img.css('transition','transform 0.4s');
+		updateScale(_scale);
+	}
+
+	function onResize()
+	{
+		_this.resetImage(scale, true);
+	}
+
+	function onAnimationFrame() {
+		if (panspeed.x !== 0 || panspeed.y != 0) {
+			$img.css('transition','');
+
+			if (panspeed.x > 0 && panspeed.x < max_panspeed) {
+				panspeed.x += pan_thrust;
+				if (panspeed.x > max_panspeed) panspeed.x = max_panspeed;
+			} else if (panspeed.x < 0 && panspeed.x > min_panspeed) {
+				panspeed.x -= pan_thrust;
+				if (panspeed.x < min_panspeed) panspeed.x = min_panspeed;
+			}
+
+			if (panspeed.y > 0 && panspeed.y < max_panspeed) {
+				panspeed.y += pan_thrust;
+				if (panspeed.y > max_panspeed) panspeed.y = max_panspeed;
+			} else if (panspeed.y < 0 && panspeed.y > min_panspeed) {
+				panspeed.y -= pan_thrust;
+				if (panspeed.y < min_panspeed) panspeed.y = min_panspeed;
+			}
+
+			velocity.x = panspeed.x;
+			velocity.y = panspeed.y;
+			panImage(panspeed.x, panspeed.y);
+		} else if (velocity && (Math.abs(velocity.x) >= 0.5 || Math.abs(velocity.y) >= 0.5)) {
+			let mod = 0.9;
+			velocity.x *= mod;
+			velocity.y *= mod;
+			panImage(velocity.x, velocity.y);
+		}
+
+		if (requestFrames) window.requestAnimationFrame(onAnimationFrame);
+	}
+	init.call(this);
+};
+
+ngImageViewer.open = function(image, config)
+{
+	let viewer = new ngImageViewer(config);
+	viewer.open(image);
+}
+
+ngImageViewer.fromLink = function(event, link, config)
+{
+	let $ = jQuery;
+
+	event.preventDefault();
+	event.stopPropagation();
+
+	let $link = $(link);
+	let viewer = new ngImageViewer(config);
+	viewer.open($link.attr('href'));
+}
